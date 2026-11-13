@@ -22,6 +22,17 @@ Install dependencies
 pip install -r requirements.txt
 ```
 
+Create the database
+```bash
+sudo -u postgres createdb firescope_db
+```
+
+Create database schema
+```bash
+psql -h localhost -U firescope_user -d firescope_db \
+    -f database/schema.sql
+```
+
 ## Run
 
 Start the backend

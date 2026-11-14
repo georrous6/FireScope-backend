@@ -20,6 +20,22 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
 
+    # Data
+    # Folder holding the FIRMS CSV downloads, with "modis" and "viirs" subfolders.
+    RAW_DATA_DIR: Path = PROJECT_ROOT / "data" / "raw"
+
+    # CORS: web origins allowed to call the API from a browser.
+    # Defaults cover common local frontend dev servers (React, Vite, Angular).
+    # In .env, give a JSON list: CORS_ORIGINS=["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+    ]
+
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
         case_sensitive=True,

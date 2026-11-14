@@ -1,5 +1,7 @@
+from collections.abc import Iterator
+
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from app.core.config import settings
 import logging
@@ -20,3 +22,10 @@ def check_database_connection() -> None:
         connection.execute(text("SELECT 1"))
 
     logger.info("Successfully connected to the PostgreSQL database.")
+
+
+def get_connection() -> Iterator[Connection]:
+    """FastAPI dependency: one pooled database connection per request."""
+
+    with engine.connect() as connection:
+        yield connection

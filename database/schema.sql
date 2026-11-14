@@ -1,5 +1,15 @@
 
 -- ============================================================
+-- 0. EXTENSIONS
+-- ============================================================
+
+-- PostGIS must be enabled once per database by a superuser:
+--   sudo -u postgres psql -d firescope_db -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+-- This line is then a harmless no-op, and a clear reminder if it was skipped.
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+
+-- ============================================================
 -- 1. FIRE DETECTIONS TABLE
 -- ============================================================
 
@@ -22,10 +32,14 @@ CREATE TABLE IF NOT EXISTS fire_detections (
         ) STORED,
 
     -- FIRMS measurements
+    -- MODIS brightness temperatures (K): band 21/22 and band 31.
     brightness DOUBLE PRECISION,
+    bright_t31 DOUBLE PRECISION,
+    -- VIIRS brightness temperatures (K): I-4 and I-5 channels.
+    bright_ti4 DOUBLE PRECISION,
+    bright_ti5 DOUBLE PRECISION,
     scan DOUBLE PRECISION,
     track DOUBLE PRECISION,
-    bright_t31 DOUBLE PRECISION,
     frp DOUBLE PRECISION,
 
     -- Acquisition information
@@ -72,10 +86,18 @@ CREATE TABLE IF NOT EXISTS fire_detections (
 
 );
 
+-- Upgrade tables created by the earlier version of this schema.
+ALTER TABLE fire_detections ADD COLUMN IF NOT EXISTS bright_ti4 DOUBLE PRECISION;
+ALTER TABLE fire_detections ADD COLUMN IF NOT EXISTS bright_ti5 DOUBLE PRECISION;
+
 
 -- ============================================================
 -- 2. INDEXES
 -- ============================================================
+
+-- Re-ingesting a file replaces its rows (see app/data/ingest.py).
+CREATE INDEX IF NOT EXISTS idx_fire_detections_source_file
+    ON fire_detections (source_file);
 
 -- Spatial index for geographic queries.
 CREATE INDEX IF NOT EXISTS idx_fire_detections_geom
@@ -114,3 +136,18 @@ COMMENT ON COLUMN fire_detections.sensor IS
 
 COMMENT ON COLUMN fire_detections.data_product IS
     'FIRMS data product: archive or nrt.';
+
+COMMENT ON COLUMN fire_detections.brightness IS
+    'MODIS only: channel 21/22 brightness temperature (K). NULL for VIIRS.';
+
+COMMENT ON COLUMN fire_detections.bright_t31 IS
+    'MODIS only: channel 31 brightness temperature (K). NULL for VIIRS.';
+
+COMMENT ON COLUMN fire_detections.bright_ti4 IS
+    'VIIRS only: I-4 channel brightness temperature (K). NULL for MODIS.';
+
+COMMENT ON COLUMN fire_detections.bright_ti5 IS
+    'VIIRS only: I-5 channel brightness temperature (K). NULL for MODIS.';
+
+COMMENT ON COLUMN fire_detections.confidence IS
+    'MODIS: 0-100. VIIRS: l (low), n (nominal), h (high).';

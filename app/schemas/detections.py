@@ -143,3 +143,31 @@ class Coverage(BaseModel):
     first_date: date | None
     last_date: date | None
     by_source: list[SensorCoverage]
+
+
+class HarmonizedCellDetectionsPoint(BaseModel):
+    month: date = Field(description="Month bucket (UTC), stored as month start date.")
+    detections: float
+    source: str
+
+
+class HarmonizedCellFrpPoint(BaseModel):
+    month: date = Field(description="Month bucket (UTC), stored as month start date.")
+    frp_mw: float
+    source: str
+
+
+class HarmonizedCellDetectionsSeries(BaseModel):
+    gx: int
+    gy: int
+    lat: float = Field(description="Grid-cell center latitude.")
+    lon: float = Field(description="Grid-cell center longitude.")
+    points: list[HarmonizedCellDetectionsPoint]
+
+
+class HarmonizedCellFrpSeries(BaseModel):
+    gx: int
+    gy: int
+    lat: float = Field(description="Grid-cell center latitude.")
+    lon: float = Field(description="Grid-cell center longitude.")
+    points: list[HarmonizedCellFrpPoint]

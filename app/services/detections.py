@@ -7,6 +7,7 @@ back into JSON.
 """
 
 from datetime import datetime, time, timedelta, timezone
+import math
 from typing import Any
 
 from sqlalchemy import text
@@ -15,10 +16,17 @@ from sqlalchemy.engine import Connection
 from app.schemas.detections import (
     Coverage,
     DetectionFilters,
+    HarmonizedCellDetectionsPoint,
+    HarmonizedCellDetectionsSeries,
+    HarmonizedCellFrpPoint,
+    HarmonizedCellFrpSeries,
     Interval,
     SensorCoverage,
     TimeSeriesPoint,
 )
+
+
+HARMONIZED_GRID_DEGREES = 0.25
 
 
 def build_where(f: DetectionFilters) -> tuple[str, dict[str, Any]]:
@@ -222,4 +230,129 @@ def coverage(conn: Connection) -> Coverage:
         first_date=min((s.first_date for s in sources), default=None),
         last_date=max((s.last_date for s in sources), default=None),
         by_source=sources,
+    )
+
+
+def _grid_cell_for_coordinates(lat: float, lon: float) -> tuple[int, int]:
+    return math.floor(lon / HARMONIZED_GRID_DEGREES), math.floor(
+        lat / HARMONIZED_GRID_DEGREES
+    )
+
+
+def _cell_exists(conn: Connection, gx: int, gy: int) -> bool:
+    exists = conn.execute(
+        text("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM harmonized_cell_month
+                WHERE gx = :gx AND gy = :gy
+            )
+        """),
+        {"gx": gx, "gy": gy},
+    ).scalar_one()
+    return bool(exists)
+
+
+def _cell_series_rows(
+    conn: Connection,
+    gx: int,
+    gy: int,
+    value_column: str,
+) -> list[dict[str, Any]]:
+    sql = text(f"""
+        WITH target_cell AS (
+            SELECT
+                CAST(:gx AS INTEGER) AS gx,
+                CAST(:gy AS INTEGER) AS gy,
+                ROUND(
+                    ((CAST(:gy AS INTEGER) + 0.5) * :grid)::numeric,
+                    6
+                )::float8 AS lat,
+                ROUND(
+                    ((CAST(:gx AS INTEGER) + 0.5) * :grid)::numeric,
+                    6
+                )::float8 AS lon
+        )
+        SELECT
+            t.gx,
+            t.gy,
+            t.lat,
+            t.lon,
+            n.month,
+            COALESCE(c.{value_column}, 0)::float8 AS value,
+            COALESCE(c.source, n.source) AS source
+        FROM target_cell t
+        JOIN harmonized_national_month n ON true
+        LEFT JOIN harmonized_cell_month c
+            ON c.month = n.month
+           AND c.gx = t.gx
+           AND c.gy = t.gy
+        ORDER BY n.month
+    """)
+
+    return conn.execute(
+        sql,
+        {
+            "gx": gx,
+            "gy": gy,
+            "grid": HARMONIZED_GRID_DEGREES,
+        },
+    ).mappings().all()
+
+
+def harmonized_cell_detections_series(
+    conn: Connection,
+    lat: float,
+    lon: float,
+) -> HarmonizedCellDetectionsSeries | None:
+    gx, gy = _grid_cell_for_coordinates(lat, lon)
+    if not _cell_exists(conn, gx, gy):
+        return None
+
+    rows = _cell_series_rows(conn, gx, gy, "detections")
+    if not rows:
+        return None
+
+    return HarmonizedCellDetectionsSeries(
+        gx=rows[0]["gx"],
+        gy=rows[0]["gy"],
+        lat=rows[0]["lat"],
+        lon=rows[0]["lon"],
+        points=[
+            HarmonizedCellDetectionsPoint(
+                month=row["month"],
+                detections=row["value"],
+                source=row["source"],
+            )
+            for row in rows
+        ],
+    )
+
+
+def harmonized_cell_frp_series(
+    conn: Connection,
+    lat: float,
+    lon: float,
+) -> HarmonizedCellFrpSeries | None:
+    gx, gy = _grid_cell_for_coordinates(lat, lon)
+    if not _cell_exists(conn, gx, gy):
+        return None
+
+    rows = _cell_series_rows(conn, gx, gy, "frp_mw")
+    if not rows:
+        return None
+
+    return HarmonizedCellFrpSeries(
+        gx=rows[0]["gx"],
+        gy=rows[0]["gy"],
+        lat=rows[0]["lat"],
+        lon=rows[0]["lon"],
+        points=[
+            HarmonizedCellFrpPoint(
+                month=row["month"],
+                frp_mw=row["value"],
+                source=row["source"],
+            )
+            for row in rows
+        ],
     )

@@ -4,3 +4,5 @@ pydantic-settings
 polars[rtcompat]
 sqlalchemy
 psycopg[binary]
+statsmodels
+pandas

@@ -1,4 +1,6 @@
 .env
 *.csv
 *.pyc
+*.png
+*.json
 __pycache__/

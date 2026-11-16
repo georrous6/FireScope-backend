@@ -32,6 +32,43 @@ TABLE_COLUMNS: dict[str, pl.DataType] = {
     "source_file": pl.String,
 }
 
+HARMONIZED_CELL_MONTH_COLUMNS: dict[str, pl.DataType] = {
+    "month": pl.Date,
+    "gx": pl.Int32,
+    "gy": pl.Int32,
+    "lat": pl.Float64,
+    "lon": pl.Float64,
+    "source": pl.String,
+    "detections": pl.Float64,
+    "frp_mw": pl.Float64,
+    "modis_converted_detections": pl.Float64,
+    "modis_converted_frp_mw": pl.Float64,
+    "viirs_detections": pl.Float64,
+    "viirs_frp_mw": pl.Float64,
+    "modis_raw_detections": pl.Float64,
+    "modis_raw_frp_mw": pl.Float64,
+}
+
+HARMONIZED_NATIONAL_MONTH_COLUMNS: dict[str, pl.DataType] = {
+    "month": pl.Date,
+    "detections": pl.Float64,
+    "frp_mw": pl.Float64,
+    "modis_converted_detections": pl.Float64,
+    "modis_converted_frp_mw": pl.Float64,
+    "viirs_detections": pl.Float64,
+    "viirs_frp_mw": pl.Float64,
+    "modis_raw_detections": pl.Float64,
+    "modis_raw_frp_mw": pl.Float64,
+    "source": pl.String,
+    "detections_p10": pl.Float64,
+    "detections_p90": pl.Float64,
+    "frp_mw_p10": pl.Float64,
+    "frp_mw_p90": pl.Float64,
+    "oos_modis_converted_detections": pl.Float64,
+    "oos_modis_converted_frp_mw": pl.Float64,
+    "oos_terra_only_converted_detections": pl.Float64,
+}
+
 # Columns that only exist for one sensor (brightness) or one product (type).
 # Missing ones are added as NULL.
 OPTIONAL_COLUMNS = [
@@ -180,3 +217,79 @@ class FIRMSDataLoader:
             )
 
         return pl.concat(frames, how="vertical")
+
+
+class HarmonizedDataLoader:
+    """
+    Reads harmonized monthly CSV outputs produced by analysis/harmonize.py.
+
+    Expected files:
+
+        <HARMONIZED_DIR>/harmonized_cell_month.csv
+        <HARMONIZED_DIR>/harmonized_national_month.csv
+    """
+
+    def __init__(self, harmonized_data_dir: Path | None = None):
+        base = settings.RAW_DATA_DIR.parent
+        self.harmonized_data_dir = Path(harmonized_data_dir or base / "harmonized")
+
+    @property
+    def cell_month_path(self) -> Path:
+        return self.harmonized_data_dir / "harmonized_cell_month.csv"
+
+    @property
+    def national_month_path(self) -> Path:
+        return self.harmonized_data_dir / "harmonized_national_month.csv"
+
+    def find_files(self) -> dict[str, Path]:
+        return {
+            "cell": self.cell_month_path,
+            "national": self.national_month_path,
+        }
+
+    @staticmethod
+    def _normalize_month(df: pl.DataFrame) -> pl.DataFrame:
+        # harmonize.py stores month as YYYY-MM, convert to month-start date.
+        return df.with_columns(
+            pl.col("month").str.strptime(pl.Date, format="%Y-%m", strict=True)
+        )
+
+    @staticmethod
+    def _cast_to_schema(
+        df: pl.DataFrame,
+        schema: dict[str, pl.DataType],
+        source_name: str,
+    ) -> pl.DataFrame:
+        missing = [c for c in schema if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"{source_name} is missing required columns: {', '.join(missing)}"
+            )
+
+        return df.select(pl.col(name).cast(dtype) for name, dtype in schema.items())
+
+    def load_cell_month(self) -> pl.DataFrame:
+        path = self.cell_month_path
+        if not path.exists():
+            raise FileNotFoundError(f"Missing harmonized file: {path}")
+
+        df = pl.read_csv(path)
+        df = self._normalize_month(df)
+        return self._cast_to_schema(
+            df,
+            HARMONIZED_CELL_MONTH_COLUMNS,
+            path.name,
+        )
+
+    def load_national_month(self) -> pl.DataFrame:
+        path = self.national_month_path
+        if not path.exists():
+            raise FileNotFoundError(f"Missing harmonized file: {path}")
+
+        df = pl.read_csv(path)
+        df = self._normalize_month(df)
+        return self._cast_to_schema(
+            df,
+            HARMONIZED_NATIONAL_MONTH_COLUMNS,
+            path.name,
+        )

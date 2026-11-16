@@ -1,12 +1,16 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.engine import Connection
 
 from app.core.database import get_connection
 from app.schemas.detections import (
     Coverage,
     DetectionFilters,
+    ForecastMetric,
+    HarmonizedCellDetectionsSeries,
+    HarmonizedCellForecast,
+    HarmonizedCellFrpSeries,
     Interval,
     TimeSeriesPoint,
     detection_filters,
@@ -111,3 +115,121 @@ def detections_coverage(conn: Conn) -> Coverage:
     setting the frontend's date picker limits and initial map view.
     """
     return service.coverage(conn)
+
+
+@router.get(
+    "/harmonized/cell/detections",
+    summary="Harmonized monthly detections for the grid cell containing coordinates",
+    response_model=HarmonizedCellDetectionsSeries,
+)
+def harmonized_cell_detections(
+    conn: Conn,
+    lat: Annotated[
+        float,
+        Query(ge=-90, le=90, description="Latitude in WGS84 decimal degrees."),
+    ],
+    lon: Annotated[
+        float,
+        Query(ge=-180, le=180, description="Longitude in WGS84 decimal degrees."),
+    ],
+) -> HarmonizedCellDetectionsSeries:
+    """
+    Maps coordinates to the harmonized 0.25 degree grid cell and returns
+    monthly detections for that cell. Each point includes its source
+    (VIIRS S-NPP or MODIS converted to VIIRS-equivalent).
+    """
+    result = service.harmonized_cell_detections_series(conn, lat, lon)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No harmonized cell found for the provided coordinates.",
+        )
+
+    return result
+
+
+@router.get(
+    "/harmonized/cell/frp",
+    summary="Harmonized monthly FRP for the grid cell containing coordinates",
+    response_model=HarmonizedCellFrpSeries,
+)
+def harmonized_cell_frp(
+    conn: Conn,
+    lat: Annotated[
+        float,
+        Query(ge=-90, le=90, description="Latitude in WGS84 decimal degrees."),
+    ],
+    lon: Annotated[
+        float,
+        Query(ge=-180, le=180, description="Longitude in WGS84 decimal degrees."),
+    ],
+) -> HarmonizedCellFrpSeries:
+    """
+    Maps coordinates to the harmonized 0.25 degree grid cell and returns
+    monthly FRP (MW) for that cell. Each point includes its source
+    (VIIRS S-NPP or MODIS converted to VIIRS-equivalent).
+    """
+    result = service.harmonized_cell_frp_series(conn, lat, lon)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No harmonized cell found for the provided coordinates.",
+        )
+
+    return result
+
+
+@router.get(
+    "/harmonized/cell/forecast",
+    summary="Forecast harmonized monthly fire activity for a grid cell",
+    response_model=HarmonizedCellForecast,
+)
+def forecast_harmonized_cell(
+    conn: Conn,
+    lat: Annotated[
+        float,
+        Query(ge=-90, le=90, description="Latitude in WGS84 decimal degrees."),
+    ],
+    lon: Annotated[
+        float,
+        Query(ge=-180, le=180, description="Longitude in WGS84 decimal degrees."),
+    ],
+    metric: Annotated[
+        ForecastMetric,
+        Query(description="Metric to forecast: detections or FRP."),
+    ],
+    horizon: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=12,
+            description="Number of future months to forecast (1–12).",
+        ),
+    ] = 12,
+) -> HarmonizedCellForecast:
+    """
+    Forecast monthly fire activity for the harmonized 0.25 degree grid cell
+    containing the supplied coordinates.
+
+    The service retrieves the historical harmonized time series, fits the
+    forecasting model and returns the predictions.
+
+    The forecast represents the entire grid cell, not the exact coordinates.
+    """
+    result = service.forecast_harmonized_cell(
+        conn=conn,
+        lat=lat,
+        lon=lon,
+        metric=metric,
+        horizon=horizon,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No harmonized cell found for the provided coordinates.",
+        )
+
+    return result

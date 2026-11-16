@@ -29,6 +29,11 @@ class Interval(str, Enum):
     year = "year"
 
 
+class ForecastMetric(str, Enum):
+    detections = "detections"
+    frp = "frp"
+
+
 @dataclass
 class BBox:
     min_lon: float
@@ -40,23 +45,29 @@ class BBox:
 def parse_bbox(value: str | None) -> BBox | None:
     if value is None:
         return None
+
     try:
         parts = [float(p) for p in value.split(",")]
     except ValueError:
         parts = []
+
     if len(parts) != 4:
         raise HTTPException(
             422, "bbox must be 4 numbers: min_lon,min_lat,max_lon,max_lat"
         )
+
     box = BBox(*parts)
+
     if not (-180 <= box.min_lon < box.max_lon <= 180):
         raise HTTPException(
             422, "bbox longitudes must satisfy -180 <= min_lon < max_lon <= 180"
         )
+
     if not (-90 <= box.min_lat < box.max_lat <= 90):
         raise HTTPException(
             422, "bbox latitudes must satisfy -90 <= min_lat < max_lat <= 90"
         )
+
     return box
 
 
@@ -143,3 +154,67 @@ class Coverage(BaseModel):
     first_date: date | None
     last_date: date | None
     by_source: list[SensorCoverage]
+
+
+class HarmonizedCellDetectionsPoint(BaseModel):
+    month: date = Field(description="Month bucket (UTC), stored as month start date.")
+    detections: float
+    source: str
+
+
+class HarmonizedCellFrpPoint(BaseModel):
+    month: date = Field(description="Month bucket (UTC), stored as month start date.")
+    frp_mw: float
+    source: str
+
+
+class HarmonizedCellDetectionsSeries(BaseModel):
+    gx: int
+    gy: int
+    lat: float = Field(description="Grid-cell center latitude.")
+    lon: float = Field(description="Grid-cell center longitude.")
+    points: list[HarmonizedCellDetectionsPoint]
+
+
+class HarmonizedCellFrpSeries(BaseModel):
+    gx: int
+    gy: int
+    lat: float = Field(description="Grid-cell center latitude.")
+    lon: float = Field(description="Grid-cell center longitude.")
+    points: list[HarmonizedCellFrpPoint]
+
+
+class ForecastPoint(BaseModel):
+    month: date = Field(description="Forecast month, stored as month start date.")
+    value: float
+    lower_bound: float | None = Field(
+        default=None,
+        description="Lower prediction interval bound, when available.",
+    )
+    upper_bound: float | None = Field(
+        default=None,
+        description="Upper prediction interval bound, when available.",
+    )
+
+
+class ForecastHistoricalPoint(BaseModel):
+    month: date
+    value: float
+
+
+class HarmonizedCellForecast(BaseModel):
+    gx: int
+    gy: int
+    lat: float = Field(description="Grid-cell center latitude.")
+    lon: float = Field(description="Grid-cell center longitude.")
+
+    metric: ForecastMetric
+    unit: str
+    horizon: int
+
+    model: str = Field(description="Forecasting model used.")
+    historical_points: int
+    sources: list[str]
+
+    historical_data: list[ForecastHistoricalPoint]
+    forecast: list[ForecastPoint]
